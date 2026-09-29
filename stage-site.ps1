@@ -22,6 +22,7 @@ Get-ChildItem $root -Filter "google*.html" | Copy-Item -Destination $out   # 구
 Get-ChildItem $root -Filter "naver*.html"  | Copy-Item -Destination $out   # 네이버 소유권 확인 파일 (지우면 안 돼요)
 Copy-Item (Join-Path $root "thumbs") (Join-Path $out "thumbs") -Recurse
 Copy-Item (Join-Path $root "recommend") (Join-Path $out "recommend") -Recurse
+Copy-Item (Join-Path $root "similar") (Join-Path $out "similar") -Recurse
 
 # 방문자 브라우저가 예전 파일을 쓰지 않게, index.html 의 ?v= 버전을 오늘 날짜로 바꿔요
 $indexPath = Join-Path $out "index.html"

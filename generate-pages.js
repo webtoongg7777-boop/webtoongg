@@ -176,7 +176,7 @@ function head({ title, description, canonical, rel, jsonLd }) {
     <nav class="topnav" aria-label="주요 메뉴">
       <a href="${rel}#finder">취향 추천</a>
       <a href="${rel}recommend/">테마별 추천</a>
-      <a href="${rel}#popular-section">인기 웹툰</a>
+      <a href="${rel}similar/">비슷한 웹툰</a>
     </nav>
   </div>
 </header>`;
@@ -321,7 +321,176 @@ function renderHub() {
 ${foot(rel)}`;
 }
 
+// ───────── "○○ 같은 웹툰" 페이지 ─────────
+// 인기작마다, 같은 장르이면서 태그가 많이 겹치는 작품을 골라 보여줘요.
+// 드문 태그(예: 천마, 회귀)가 겹칠수록 점수가 높고, 흔한 태그나 비슷함과 상관없는 태그는 빼요.
+const SIMILAR_DIR = path.join(ROOT, "similar");
+const SIMILAR_SEEDS = 200;   // 페이지를 만들 인기작 수
+const SIMILAR_TOP = 20;      // 페이지마다 보여줄 비슷한 작품 수
+const SIMILAR_MIN = 8;       // 비슷한 작품이 이보다 적으면 페이지를 만들지 않아요
+const NOISE_TAGS = new Set(["명작", "몰아보기", "지금추천작", "요즘핫한추천작", "독자PICK", "드라마&영화 원작웹툰",
+  "소설원작", "컷툰", "4컷만화", "레진절", "판무", "현대", "액션", "판타지", "로맨스", "드라마"]);
+const isNoiseTag = t => NOISE_TAGS.has(t) || /최강자전|공모전|연재직행열차|스튜디오|스트링$/.test(t);
+
+const tagDf = new Map();
+for (const w of POOL) for (const t of new Set(w.tags)) tagDf.set(t, (tagDf.get(t) || 0) + 1);
+const idf = t => Math.log(POOL.length / (tagDf.get(t) || 1));
+const FEAT = new Map(POOL.map(w => [w, {
+  tags: new Set(w.tags.filter(t => !isNoiseTag(t))),
+  genres: new Set(GENRES.filter(g => genreMatches(g, w)).map(g => g.id)),
+}]));
+
+function similarTo(seed) {
+  const s = FEAT.get(seed);
+  const scored = [];
+  for (const w of POOL) {
+    if (w === seed || w.title === seed.title) continue;
+    const f = FEAT.get(w);
+    const sharedGenres = [...s.genres].filter(g => f.genres.has(g));
+    if (!sharedGenres.length) continue;
+    const sharedTags = [...s.tags].filter(t => f.tags.has(t));
+    if (!sharedTags.length) continue;
+    // 원작의 대표 장르(플랫폼이 정한 장르)가 같으면 가산점: 화산귀환(무협)에는 무협 작품이 먼저 오게
+    const samePrimary = seed.genres.some(g => w.genres.includes(g)) ? 3 : 0;
+    const score = sharedTags.reduce((sum, t) => sum + idf(t), 0) + 2 * sharedGenres.length + samePrimary + 0.8 * w.pop;
+    scored.push({ w, score, sharedTags: sharedTags.sort((a, b) => idf(b) - idf(a)), sharedGenres });
+  }
+  return scored.sort((a, b) => b.score - a.score).slice(0, SIMILAR_TOP);
+}
+
+const similarPages = [];
+const seenTitles = new Set();
+for (const seed of [...POOL].sort(byPop)) {
+  if (similarPages.length >= SIMILAR_SEEDS) break;
+  if (seenTitles.has(seed.title)) continue;
+  seenTitles.add(seed.title);
+  const items = similarTo(seed);
+  if (items.length < SIMILAR_MIN) continue;
+  similarPages.push({
+    seed, items,
+    slug: `${seed.platform}-${seed.platform === "lezhin" ? seed.url.split("/").pop() : seed.id}`,
+    keyTags: [...FEAT.get(seed).tags].sort((a, b) => idf(b) - idf(a)).slice(0, 5),
+  });
+}
+const SIMILAR_BY_WORK = new Map(similarPages.map(sp => [sp.seed, sp]));
+const similarUrl = sp => `${BASE_URL}/similar/${sp.slug}/`;
+const similarTitle = sp => `${sp.seed.title} 같은 웹툰 추천 TOP ${sp.items.length}`;
+
+function renderSimilar(sp) {
+  const rel = "../../";
+  const { seed, items } = sp;
+  const pf = PLATFORM[seed.platform];
+  const title = `${similarTitle(sp)} - 비슷한 웹툰 | 웹툰지지`;
+  const top3 = items.slice(0, 3).map(i => i.w.title);
+  const description = `${seed.title} 재밌게 봤다면 이 웹툰도 좋아할 거예요. ${top3.join(", ")} 등 ${sp.keyTags.slice(0, 3).join("·")} 요소가 비슷한 웹툰 ${items.length}개를 모았어요.`;
+  const jsonLd = [
+    {
+      "@context": "https://schema.org", "@type": "ItemList", name: similarTitle(sp), url: similarUrl(sp),
+      numberOfItems: items.length,
+      itemListElement: items.map((it, i) => ({ "@type": "ListItem", position: i + 1, name: it.w.title, url: it.w.url })),
+    },
+    {
+      "@context": "https://schema.org", "@type": "BreadcrumbList",
+      itemListElement: [
+        { "@type": "ListItem", position: 1, name: "웹툰지지", item: `${BASE_URL}/` },
+        { "@type": "ListItem", position: 2, name: "비슷한 웹툰 찾기", item: `${BASE_URL}/similar/` },
+        { "@type": "ListItem", position: 3, name: similarTitle(sp), item: similarUrl(sp) },
+      ],
+    },
+  ];
+
+  const list = items.map((it, i) => {
+    const w = it.w, wp = PLATFORM[w.platform];
+    const chips = [
+      ...it.sharedTags.slice(0, 4).map(t => `<span class="chip hit">${esc(t)}</span>`),
+      ...it.sharedGenres.slice(0, 2).map(g => `<span class="chip">${esc(GENRE_SEO[g] ? GENRE_SEO[g].name : g)}</span>`),
+    ].join("");
+    const more = SIMILAR_BY_WORK.get(w);
+    return `
+      <li class="card">
+        <div class="rank">${i + 1}</div>
+        <div class="thumb"><img src="${rel}${esc(w.thumb)}" alt="${esc(w.title)} 표지" width="112" height="112" loading="lazy"></div>
+        <div class="info">
+          <span class="pf-badge" style="--pf:${wp.color}">${wp.label}</span>
+          <h2 class="item-title"><a href="${esc(w.url)}" target="_blank" rel="noopener">${esc(w.title)}</a></h2>
+          <div class="meta">${esc(w.author)} · ${AGE_LABEL[w.age] || ""} · ${w.finished ? "완결" : "연재중"}</div>
+          <p class="synopsis">${esc(cut(w.synopsis, 140))}</p>
+          <div class="chips">${chips}</div>
+          <a class="go" href="${esc(w.url)}" target="_blank" rel="noopener">${wp.label}에서 보기 →</a>${more ? ` · <a class="go" href="../${more.slug}/">${esc(w.title)} 같은 웹툰 →</a>` : ""}
+        </div>
+      </li>`;
+  }).join("");
+
+  // 함께 보면 좋은 링크: 목록에 있는 작품의 "같은 웹툰" 페이지 + 원작 장르의 추천 페이지
+  const relatedSimilar = items.map(it => SIMILAR_BY_WORK.get(it.w)).filter(Boolean).slice(0, 10)
+    .map(o => `<a href="../${o.slug}/">${esc(o.seed.title)} 같은 웹툰</a>`);
+  const relatedGenre = pages.filter(p => p.type === "genre" && FEAT.get(seed).genres.has(p.genre.id))
+    .map(p => `<a href="${rel}recommend/${p.slug}/">${esc(p.name)} 웹툰 추천</a>`);
+
+  return `${head({ title, description, canonical: similarUrl(sp), rel, jsonLd })}
+<main class="container seo-page">
+  <nav class="breadcrumb" aria-label="현재 위치"><a href="${rel}">웹툰지지</a> › <a href="${rel}similar/">비슷한 웹툰 찾기</a> › <span>${esc(seed.title)}</span></nav>
+  <section class="page-hero">
+    <h1>${esc(seed.title)} 같은 웹툰 추천</h1>
+    <div class="seed">
+      <div class="thumb"><img src="${rel}${esc(seed.thumb)}" alt="${esc(seed.title)} 표지" width="112" height="112"></div>
+      <div>
+        <span class="pf-badge" style="--pf:${pf.color}">${pf.label}</span>
+        <p><b>${esc(seed.title)}</b> · ${esc(seed.author)}</p>
+        <p class="seed-tags">${sp.keyTags.map(t => `<span class="chip">${esc(t)}</span>`).join("")}</p>
+      </div>
+    </div>
+    <p>${esc(seed.title)} 재밌게 봤다면 이 웹툰들도 좋아할 거예요. 같은 장르이면서 <b>${esc(sp.keyTags.slice(0, 3).join(", "))}</b> 같은 요소가 겹치는 작품을, 겹치는 요소가 많은 순서로 ${items.length}개 골랐어요.</p>
+    <p class="updated">${TODAY} 기준 · 네이버웹툰·카카오웹툰·레진코믹스 · 성인 작품 제외</p>
+    <a class="btn primary" href="${rel}#finder">내 취향으로 직접 골라 추천받기 →</a>
+  </section>
+  <ol class="results rank-list">${list}
+  </ol>
+  <section class="related">
+    <h2>함께 보면 좋은 추천</h2>
+    <div class="link-chips">${[...relatedSimilar, ...relatedGenre].join("")}</div>
+  </section>
+</main>
+${foot(rel)}`;
+}
+
+function renderSimilarHub() {
+  const rel = "../";
+  const title = "비슷한 웹툰 찾기 - 좋아하는 웹툰과 비슷한 작품 추천 | 웹툰지지";
+  const description = `화산귀환, 전지적 독자 시점 같은 인기 웹툰 ${similarPages.length}개와 비슷한 작품을 찾아보세요. 장르와 태그가 겹치는 웹툰을 추천해 드려요.`;
+  const jsonLd = {
+    "@context": "https://schema.org", "@type": "CollectionPage", name: "비슷한 웹툰 찾기", url: `${BASE_URL}/similar/`,
+    hasPart: similarPages.map(sp => ({ "@type": "WebPage", name: similarTitle(sp), url: similarUrl(sp) })),
+  };
+  const groups = GENRES.map(g => ({
+    g, list: similarPages.filter(sp => [...FEAT.get(sp.seed).genres][0] === g.id),
+  })).filter(x => x.list.length);
+  return `${head({ title, description, canonical: `${BASE_URL}/similar/`, rel, jsonLd })}
+<main class="container seo-page">
+  <nav class="breadcrumb" aria-label="현재 위치"><a href="${rel}">웹툰지지</a> › <span>비슷한 웹툰 찾기</span></nav>
+  <section class="page-hero">
+    <h1>비슷한 웹툰 찾기</h1>
+    <p>재밌게 본 웹툰을 골라 보세요. 장르와 태그가 비슷한 작품을 추천해 드려요.</p>
+    <a class="btn primary" href="${rel}#finder">취향으로 추천받기 →</a>
+  </section>
+  ${groups.map(({ g, list }) => `
+    <div class="seo-group">
+      <h3>${esc(GENRE_SEO[g.id].name)}</h3>
+      <div class="link-chips">${list.map(sp => `<a href="${sp.slug}/">${esc(sp.seed.title)}</a>`).join("")}</div>
+    </div>`).join("")}
+</main>
+${foot(rel)}`;
+}
+
 // ───────── 파일 쓰기 ─────────
+fs.rmSync(SIMILAR_DIR, { recursive: true, force: true });
+for (const sp of similarPages) {
+  const dir = path.join(SIMILAR_DIR, sp.slug);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "index.html"), renderSimilar(sp));
+}
+fs.writeFileSync(path.join(SIMILAR_DIR, "index.html"), renderSimilarHub());
+
 fs.rmSync(OUT_DIR, { recursive: true, force: true });
 for (const p of pages) {
   const dir = path.join(OUT_DIR, p.slug);
@@ -335,6 +504,8 @@ const urls = [
   { loc: `${BASE_URL}/`, priority: "1.0" },
   { loc: `${BASE_URL}/recommend/`, priority: "0.9" },
   ...pages.map(p => ({ loc: pageUrl(p), priority: p.type === "combo" ? "0.7" : "0.8" })),
+  { loc: `${BASE_URL}/similar/`, priority: "0.8" },
+  ...similarPages.map(sp => ({ loc: similarUrl(sp), priority: "0.6" })),
 ];
 fs.writeFileSync(path.join(ROOT, "sitemap.xml"), `<?xml version="1.0" encoding="UTF-8"?>
 <urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
@@ -359,6 +530,13 @@ ${pages.map(p => `  <item>
     <description>${esc(`${p.about} 인기 TOP 3: ${p.works.slice(0, 3).map(w => w.title).join(", ")}`)}</description>
     <pubDate>${rfc822}</pubDate>
   </item>`).join("\n")}
+${similarPages.map(sp => `  <item>
+    <title>${esc(similarTitle(sp))}</title>
+    <link>${similarUrl(sp)}</link>
+    <guid>${similarUrl(sp)}</guid>
+    <description>${esc(`${sp.seed.title} 재밌게 봤다면: ${sp.items.slice(0, 3).map(i => i.w.title).join(", ")}`)}</description>
+    <pubDate>${rfc822}</pubDate>
+  </item>`).join("\n")}
 </channel>
 </rss>
 `);
@@ -370,9 +548,15 @@ const START = "<!-- SEO-LINKS:START -->", END = "<!-- SEO-LINKS:END -->";
 if (index.includes(START) && index.includes(END)) {
   const before = index.slice(0, index.indexOf(START) + START.length);
   const after = index.slice(index.indexOf(END));
-  fs.writeFileSync(indexFile, `${before}${linkBlock("recommend/")}\n    ${after}`);
+  const similarBlock = `
+    <div class="seo-group">
+      <h3>인기 웹툰과 비슷한 웹툰 <a class="more-link" href="similar/">전체 보기 →</a></h3>
+      <div class="link-chips">${similarPages.slice(0, 24).map(sp => `<a href="similar/${sp.slug}/">${esc(sp.seed.title)} 같은 웹툰</a>`).join("")}</div>
+    </div>`;
+  fs.writeFileSync(indexFile, `${before}${similarBlock}${linkBlock("recommend/")}\n    ${after}`);
 }
 
 const count = t => pages.filter(p => p.type === t).length;
 console.log(`페이지 ${pages.length}개 생성 (장르 ${count("genre")}, 키워드 ${count("keyword")}, 장르+키워드 ${count("combo")}, 플랫폼 ${count("platform")}, 기타 ${count("special")}) + 허브 1개`);
+console.log(`비슷한 웹툰 페이지 ${similarPages.length}개 + 허브 1개`);
 console.log(`sitemap.xml 주소 ${urls.length}개`);

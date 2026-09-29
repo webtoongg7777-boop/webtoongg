@@ -265,3 +265,10 @@ footer p { margin: 0 0 4px; }
 @media (max-width: 640px) {
   .page-hero { padding: 20px; border-radius: 18px; }
 }
+
+/* ───── 비슷한 웹툰 페이지 ───── */
+.seed { display: flex; gap: 14px; align-items: center; margin: 4px 0 16px; }
+.seed .thumb { width: 88px; }
+.seed p { margin: 2px 0; color: var(--text); }
+.seed-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px !important; }
+.more-link { font-size: 13px; font-weight: 700; color: var(--brand); text-decoration: none; margin-left: 8px; }
