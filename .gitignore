@@ -1,0 +1,7 @@
+# 만들어지는 파일 (저장소에는 올리지 않아요)
+_deploy/
+webtoongg-site.zip
+node_modules/
+
+# 개인 설정
+.claude/

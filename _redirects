@@ -1,0 +1,4 @@
+# Netlify 주소 이동 규칙
+# 예전 주소(webtoongg.netlify.app)로 들어오면 새 도메인으로 영구 이동(301)
+https://webtoongg.netlify.app/*  https://webtoongg.com/:splat  301!
+http://webtoongg.netlify.app/*   https://webtoongg.com/:splat  301!

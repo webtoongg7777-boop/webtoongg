@@ -1,0 +1,75 @@
+# 웹툰지지 자동 갱신
+# - 매일 새벽 3시(한국시간): 플랫폼 인기 순위 갱신 → 추천 페이지 재생성 → Netlify 배포
+# - 매주 월요일 새벽 2시(한국시간): 작품 정보 전체(네이버 · 카카오 · 레진)도 함께 갱신
+# - GitHub 저장소의 Actions 탭 → "웹툰지지 자동 갱신" → Run workflow 로 직접 실행할 수도 있어요
+#
+# 필요한 Secrets (저장소 Settings → Secrets and variables → Actions):
+#   NETLIFY_AUTH_TOKEN : Netlify 개인 액세스 토큰
+#   NETLIFY_SITE_ID    : Netlify 프로젝트 ID (Project configuration → General → Project ID)
+
+name: 웹툰지지 자동 갱신
+
+on:
+  schedule:
+    - cron: "0 18 * * *"   # 매일 18:00 UTC = 한국시간 새벽 3시 (순위)
+    - cron: "0 17 * * 0"   # 매주 일요일 17:00 UTC = 한국시간 월요일 새벽 2시 (작품 정보 전체)
+  workflow_dispatch:
+    inputs:
+      full:
+        description: "작품 정보 전체도 갱신할까요? (약 40분)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: windows-latest     # 기존 PowerShell 스크립트를 그대로 쓰려고 윈도우에서 실행해요
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: 작품 정보 전체 갱신 (주 1회)
+        if: github.event.schedule == '0 17 * * 0' || inputs.full
+        shell: powershell
+        run: |
+          powershell -ExecutionPolicy Bypass -File .\fetch-naver.ps1
+          powershell -ExecutionPolicy Bypass -File .\fetch-kakao.ps1
+          powershell -ExecutionPolicy Bypass -File .\fetch-lezhin.ps1
+
+      - name: 인기 순위 갱신
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File .\fetch-ranking.ps1
+
+      - name: 올릴 파일 준비 (추천 페이지 · 사이트맵 재생성)
+        shell: powershell
+        run: powershell -ExecutionPolicy Bypass -File .\stage-site.ps1
+
+      - name: 바뀐 데이터를 저장소에 저장
+        shell: bash
+        run: |
+          git config user.name "webtoongg-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -A data-*.js thumbs recommend sitemap.xml rss.xml
+          if git diff --cached --quiet; then
+            echo "바뀐 내용 없음"
+          else
+            git commit -m "자동 갱신: $(date -u +'%Y-%m-%d %H:%M') UTC"
+            git push
+          fi
+
+      - name: Netlify 배포
+        shell: bash
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: npx --yes netlify-cli@17 deploy --prod --dir=_deploy --message "자동 갱신 ${{ github.run_number }}"
