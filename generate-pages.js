@@ -19,6 +19,7 @@ const COMBO_MIN = 15;      // 장르+키워드 페이지를 만들 최소 작품
 const COMBO_PER_GENRE = 6; // 장르마다 만들 장르+키워드 페이지 수
 const COMBO_MAX = 50;      // 장르+키워드 페이지 최대 개수
 const CONTACT_EMAIL = "webtoongg7777@gmail.com";   // 페이지 하단 문의 메일
+const GA_ID = "G-EYH1WF44HG";                      // 구글 애널리틱스 측정 ID (방문자 통계)
 const now = new Date();
 const TODAY = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}-${String(now.getDate()).padStart(2, "0")}`;
 const ASSET_VERSION = TODAY.replace(/-/g, "");
@@ -165,6 +166,8 @@ function head({ title, description, canonical, rel, jsonLd }) {
 <link rel="stylesheet" href="https://cdn.jsdelivr.net/gh/orioncactus/pretendard@v1.3.9/dist/web/variable/pretendardvariable-dynamic-subset.min.css">
 <link rel="stylesheet" href="${rel}style.css?v=${ASSET_VERSION}">
 <script type="application/ld+json">${JSON.stringify(jsonLd)}</script>
+<script async src="https://www.googletagmanager.com/gtag/js?id=${GA_ID}"></script>
+<script>window.dataLayer = window.dataLayer || []; function gtag(){dataLayer.push(arguments);} gtag("js", new Date()); gtag("config", "${GA_ID}");</script>
 </head>
 <body>
 <header class="topbar">
@@ -189,7 +192,7 @@ function foot(rel) {
       <p>웹툰지지는 각 플랫폼과 제휴 관계가 없는 개인 추천 서비스입니다.</p>
     </div>
     <div>
-      <p><a href="${rel}recommend/">테마별 웹툰 추천 전체 보기</a></p>
+      <p><a href="${rel}recommend/">테마별 웹툰 추천 전체 보기</a> · <a href="${rel}privacy.html">개인정보 처리방침</a></p>
       <p>문의: <a href="${htmlCode(`mailto:${CONTACT_EMAIL}`)}">${htmlCode(CONTACT_EMAIL)}</a></p>
     </div>
   </div>
