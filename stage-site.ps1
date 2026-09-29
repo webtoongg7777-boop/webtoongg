@@ -15,7 +15,7 @@ Pop-Location
 if (Test-Path $out) { [IO.Directory]::Delete($out, $true) }
 New-Item -ItemType Directory $out | Out-Null
 
-$names = "index.html", "style.css", "catalog.js", "app.js", "robots.txt", "sitemap.xml", "rss.xml", "_redirects",
+$names = "index.html", "style.css", "catalog.js", "app.js", "robots.txt", "sitemap.xml", "rss.xml", "_redirects", "og-image.png",
          "data-naver.js", "data-kakao.js", "data-lezhin.js", "data-ranking.js"
 foreach ($n in $names) { Copy-Item (Join-Path $root $n) $out }
 Get-ChildItem $root -Filter "google*.html" | Copy-Item -Destination $out   # 구글 소유권 확인 파일 (지우면 안 돼요)
