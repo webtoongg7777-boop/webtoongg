@@ -131,7 +131,7 @@ function renderConditions() {
       <div id="status">${optionButtons(STATUS, id => state.status === id)}</div>
       <div class="nav">
         <button class="btn" id="prev">← 이전</button>
-        <button class="btn primary" id="next" ${state.age === null && !state.adultOnly ? "disabled" : ""}>추천 결과 보기 ✨</button></div>
+        <button class="btn primary" id="next" ${state.age === null && !state.adultOnly ? "disabled" : ""}>추천 결과 보기 →</button></div>
     </div>`;
   if (!state.adultOnly) bindOptions(app.querySelector("#ages"), id => { state.age = Number(id); render(); });
   bindOptions(app.querySelector("#status"), id => { state.status = id; render(); });
@@ -175,7 +175,7 @@ function recommend() {
 }
 
 function matchLabel(s) {
-  if (s.match === s.total) return "✓ 고른 조건 모두 일치";
+  if (s.match === s.total) return "고른 조건 모두 일치";
   return `고른 조건 ${s.total}개 중 ${s.match}개 일치`;
 }
 
@@ -198,8 +198,8 @@ function renderResults() {
 
   app.innerHTML = `
     <div class="panel">
-      <h2>당신을 위한 추천${state.adultOnly ? `<span class="badge-adult">성인</span>` : ""}</h2>
-      <p class="hint">고른 취향에 맞는 작품을 찾았어요.</p>
+      <h2>추천 결과${state.adultOnly ? `<span class="badge-adult">성인</span>` : ""}</h2>
+      <p class="hint">고른 장르와 키워드가 많이 맞는 작품부터 보여 드려요.</p>
       <div class="picked">${picked.map(p => `<span class="chip">${p}</span>`).join("")}</div>
       <div class="sortbar">
         <span class="count">조건에 맞는 작품 <b>${all.length.toLocaleString()}</b>개</span>
@@ -222,7 +222,7 @@ function renderResults() {
             <div class="meta">${escapeHtml(s.w.author)} · ${AGE_LABEL[s.w.age] || ""} · ${s.w.finished ? "완결" : "연재중"} · ${p.metric} ${s.w.favorites.toLocaleString()}</div>
             <p class="synopsis">${escapeHtml(s.w.synopsis)}</p>
             <div class="chips">
-              ${s.reasons.map(r => `<span class="chip hit">✓ ${r}</span>`).join("")}
+              ${s.reasons.map(r => `<span class="chip hit">${r}</span>`).join("")}
               ${s.w.genres.filter(g => !s.reasons.includes(GENRE_LABEL[g])).map(g => `<span class="chip">${GENRE_LABEL[g] || g}</span>`).join("")}
             </div>
             <span class="go">${p.label}에서 보기 →</span>
@@ -261,10 +261,10 @@ function renderResults() {
 const POPULAR_SIZE = 12;
 const POPULAR_ALL_PLATFORMS = ["naver", "kakao"];
 const POPULAR_MODES = [
-  { id: "rank",  label: "🔥 실시간 인기" },
-  { id: "today", label: "📅 오늘 연재" },
-  { id: "new",   label: "✨ 신작" },
-  { id: "gems",  label: "💎 숨은 명작" },
+  { id: "rank",  label: "실시간 인기" },
+  { id: "today", label: "오늘 연재" },
+  { id: "new",   label: "신작" },
+  { id: "gems",  label: "숨은 명작" },
 ];
 const DAY_LABEL = { mon: "월", tue: "화", wed: "수", thu: "목", fri: "금", sat: "토", sun: "일" };
 let popularTab = "all", popularMode = "rank";
@@ -339,9 +339,16 @@ function popularList(tab, mode) {
   return interleave(platformIds.map(fn));
 }
 
-function popularCaption(mode) {
+// 순위 갱신 시각 (예: "10월 5일 03:12 기준")
+function rankingTime() {
   const r = window.DATA_RANKING;
-  const time = r ? (d => `${d.getMonth() + 1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} 기준`)(new Date(r.updatedAt)) : "";
+  if (!r) return "";
+  const d = new Date(r.updatedAt);
+  return `${d.getMonth() + 1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} 기준`;
+}
+
+function popularCaption(mode) {
+  const time = rankingTime();
   if (mode === "today") return `오늘(${DAY_LABEL[todayKey()]}요일) 연재되는 웹툰을 요일별 인기 순서로 모았어요.`;
   if (mode === "new") return "최근 연재를 시작한 작품 중 반응이 좋은 작품이에요.";
   if (mode === "gems") return "1위권 바로 아래에서 꾸준히 사랑받는 작품을 장르별로 골랐어요. 매일 다른 작품이 나와요.";
@@ -357,13 +364,40 @@ function renderPopular() {
   const numbered = popularMode !== "gems";
   box.innerHTML = top.length ? top.map((w, i) => `
     <a class="poster" href="${w.url}" target="_blank" rel="noopener" title="${escapeHtml(w.title)}">
-      <div class="cover">${coverImg(w)}${numbered ? `<span class="num">${i + 1}</span>` : ""}</div>
-      <b>${escapeHtml(w.title)}</b>
+      <div class="cover">${coverImg(w)}</div>
+      <b>${numbered ? `<span class="num">${i + 1}</span>` : ""}${escapeHtml(w.title)}</b>
       <small style="--pf:${PLATFORM[w.platform].color}">${PLATFORM[w.platform].label}</small>
     </a>`).join("")
     : `<p class="end" style="grid-column:1/-1">이 조건에 맞는 작품이 아직 없어요. 다른 탭을 눌러 보세요.</p>`;
   const updated = document.getElementById("popular-updated");
   if (updated) updated.textContent = popularCaption(popularMode);
+}
+
+// 첫 화면 "요즘 다들 보는 웹툰": 지금 실시간 15위 안에 있으면서, 쌓인 인기도 전체 상위 5%(pop 0.95 이상)인 대중작
+// 자리는 네이버 2 · 카카오 2 · 레진 1, 조건에 맞는 작품이 모자란 플랫폼 자리는 다른 플랫폼 대중작으로 채워요.
+// 가벼운 일상 · 개그 컷툰과 성인 · 완결작은 빼요. 보여주는 순위 숫자는 공식 실시간 순위 그대로예요.
+const HERO_SLOTS = [["naver", 2], ["kakao", 2], ["lezhin", 1]];
+const HERO_TOP = 15, HERO_MIN_POP = 0.95;
+function heroPicks() {
+  const ranking = window.DATA_RANKING || {};
+  const isLight = w => w.genres.every(g => g === "COMIC" || g === "DAILY");
+  const pools = HERO_SLOTS.filter(([id]) => PLATFORM[id]).map(([id, n]) => ({
+    n,
+    list: (ranking[id] || []).slice(0, HERO_TOP)
+      .map((workId, i) => ({ w: WORK_BY_KEY.get(`${id}:${workId}`), platformRank: i + 1 }))
+      .filter(c => showable(c.w) && !isLight(c.w) && c.w.pop >= HERO_MIN_POP)
+      .sort((a, b) => b.w.pop - a.w.pop),
+  }));
+  const picked = pools.flatMap(p => p.list.slice(0, p.n));
+  const size = HERO_SLOTS.reduce((s, [, n]) => s + n, 0);
+  const rest = pools.flatMap(p => p.list.slice(p.n)).sort((a, b) => b.w.pop - a.w.pop);
+  return [...picked, ...rest.slice(0, size - picked.length)].sort((a, b) => a.platformRank - b.platformRank);   // 실시간 순위가 높은 순서로
+}
+// 줄거리 첫 문장만 (궁금증이 생길 만큼만 짧게)
+function hook(synopsis) {
+  const s = String(synopsis || "").replace(/\s+/g, " ").trim();
+  const m = s.match(/^.{12,}?[.!?…](?=\s|$)/);
+  return m ? m[0] : s;
 }
 
 function initPage() {
@@ -372,6 +406,25 @@ function initPage() {
   set("stat-total", WEBTOONS.length.toLocaleString());
   set("stat-platforms", PLATFORMS.length);
   set("stat-keywords", KEYWORDS.length);
+
+  // 첫 화면 오른쪽: 요즘 다들 보는 웹툰
+  const picks = document.getElementById("hero-picks");
+  if (picks) {
+    picks.innerHTML = heroPicks().map(({ w, platformRank }) => {
+      const p = PLATFORM[w.platform];
+      const genre = GENRE_LABEL[w.genres[0]];   // 플랫폼이 정한 대표 장르
+      return `
+      <li><a href="${w.url}" target="_blank" rel="noopener">
+        <div class="hp-cover">${coverImg(w)}</div>
+        <div class="hp-info">
+          <span class="hp-rank" style="--pf:${p.color}">${p.short} 실시간 ${platformRank}위${genre ? ` · ${genre}` : ""}</span>
+          <b>${escapeHtml(w.title)}</b>
+          <p>${escapeHtml(hook(w.synopsis))}</p>
+        </div>
+      </a></li>`;
+    }).join("");
+    set("hero-board-time", rankingTime());
+  }
 
   // 인기 웹툰 탭: 보기 방식(실시간 인기 · 오늘 연재 · 신작 · 숨은 명작) + 플랫폼
   const tabs = document.getElementById("popular-tabs");

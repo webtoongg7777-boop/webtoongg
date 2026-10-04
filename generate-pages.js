@@ -501,6 +501,30 @@ for (const p of pages) {
 }
 fs.writeFileSync(path.join(OUT_DIR, "index.html"), renderHub());
 
+// 예전에 있다가 없어진 페이지 → 가장 가까운 페이지로 넘겨주는 안내 페이지 (검색에서 들어온 사람이 404 를 보지 않게)
+// 2026-10-05 장르 판정을 꼼꼼하게 바꾸면서 작품 수가 기준에 못 미쳐 사라진 조합 페이지들이에요.
+const MOVED_PAGES = {
+  "comedy-romantic-comedy": "romantic-comedy",
+  "drama-office-money": "office-money",
+  "drama-youth-romance": "youth-romance",
+  "fantasy-cider": "cider",
+  "fantasy-romance-fantasy": "romance-fantasy",
+  "thriller-cider": "cider",
+};
+for (const [from, to] of Object.entries(MOVED_PAGES)) {
+  if (pages.some(p => p.slug === from)) continue;   // 다시 기준을 넘으면 원래 페이지를 그대로 써요
+  const dir = path.join(OUT_DIR, from);
+  fs.mkdirSync(dir, { recursive: true });
+  fs.writeFileSync(path.join(dir, "index.html"), `<!doctype html>
+<html lang="ko"><head><meta charset="utf-8">
+<title>페이지가 옮겨졌어요 | 웹툰지지</title>
+<meta name="robots" content="noindex">
+<link rel="canonical" href="${BASE_URL}/recommend/${to}/">
+<meta http-equiv="refresh" content="0; url=../${to}/">
+</head><body><p>페이지가 옮겨졌어요. <a href="../${to}/">여기를 눌러 이동해 주세요.</a></p></body></html>
+`);
+}
+
 // sitemap.xml
 const urls = [
   { loc: `${BASE_URL}/`, priority: "1.0" },
@@ -553,7 +577,7 @@ if (index.includes(START) && index.includes(END)) {
   const similarBlock = `
     <div class="seo-group">
       <h3>인기 웹툰과 비슷한 웹툰 <a class="more-link" href="similar/">전체 보기 →</a></h3>
-      <div class="link-chips">${similarPages.slice(0, 24).map(sp => `<a href="similar/${sp.slug}/">${esc(sp.seed.title)} 같은 웹툰</a>`).join("")}</div>
+      <div class="link-chips">${similarPages.slice(0, 24).map(sp => `<a href="similar/${sp.slug}/">${esc(sp.seed.title)}<span class="suffix"> 같은 웹툰</span></a>`).join("")}</div>
     </div>`;
   fs.writeFileSync(indexFile, `${before}${similarBlock}${linkBlock("recommend/")}\n    ${after}`);
 }
