@@ -5,3 +5,6 @@ node_modules/
 
 # 개인 설정
 .claude/
+
+# 블로그용 이미지 · 초안 (사이트에는 안 올림)
+_blog/
