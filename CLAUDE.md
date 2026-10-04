@@ -78,11 +78,9 @@
 - 카카오페이지 · 레진 성인 작품을 수동으로 넣을지.
 
 ## 진행 중 / 다음 할 일 (2026-10-05 기준)
-1. GitHub Pages 이전 3단계: `update.yml`, `stage-site.ps1` 커밋 · Push → Actions 의 build · deploy 성공 확인
-   → `https://webtoongg7777-boop.github.io/webtoongg/` 확인.
-2. 4단계: Pages 설정에 Custom domain `webtoongg.com` 입력 → Netlify 프로젝트에서 도메인 제거 →
-   Netlify DNS 에 A 레코드 4개(185.199.108.153 / .109.153 / .110.153 / .111.153)와 `www` CNAME(`webtoongg7777-boop.github.io`) 설정
-   → DNS 확인 후 **Enforce HTTPS** 켜기 → `webtoongg.com` 전체 점검.
-3. 반영 대기 중인 수정: 인기 웹툰 4가지 탭, 휴대폰 메뉴, 처리방침 안내 (Netlify 크레딧 소진으로 배포가 막혀 있었음).
-4. 1~2주 뒤: "웹툰지지" 검색 결과(메인 페이지 · 아이콘 · 사이트 이름), Search Console 사이트맵 305 · 색인 수, GA 트래픽 획득 점검.
-5. 홍보: 커뮤니티 · 단톡방 공유(UTM 꼬리표), 네이버 블로그.
+- ✅ GitHub Pages 이전 완료 (2026-10-05). `webtoongg.com` → GitHub Pages, `www` → 메인으로 301, HTTPS 인증서 발급 · Enforce HTTPS 켬.
+  DNS 는 계속 **Netlify DNS** (네임서버 nsone.net) 에서 관리: A 레코드 4개(185.199.108~111.153) + `www` CNAME(`webtoongg7777-boop.github.io`).
+  Netlify 팀은 크레딧 소진 상태지만 DNS · 도메인은 그대로 동작. **Upgrade team 누르지 않기.**
+  점검 결과: 메인 · 사이트맵(305개) · RSS · 처리방침 · 확인 파일 · recommend/similar 모두 200, 인기 웹툰 4가지 탭 반영됨.
+1. 1~2주 뒤: "웹툰지지" 검색 결과(메인 페이지 · 아이콘 · 사이트 이름), Search Console 사이트맵 305 · 색인 수, GA 트래픽 획득 점검.
+2. 홍보: 커뮤니티 · 단톡방 공유(UTM 꼬리표), 네이버 블로그.
