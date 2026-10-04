@@ -1,0 +1,88 @@
+# 웹툰지지 (webtoongg.com)
+
+장르 · 키워드 · 조건을 골라 네이버웹툰 · 카카오웹툰 · 레진코믹스 연재작을 추천하는 정적 사이트.
+서버 없이 HTML/CSS/JS + 데이터 파일(JS)로 동작하고, GitHub Actions 가 매일 데이터를 갱신해 배포한다.
+
+## 작업할 때 지켜야 할 것
+
+- **사용자는 초보자다.** 설명은 한국어로, 버튼 이름까지 단계별로 쓴다. 영어로 답하지 않는다.
+- **자동 생성 파일은 손으로 커밋하지 않는다.** `data-*.js`, `thumbs/`, `recommend/`, `similar/`, `sitemap.xml`, `rss.xml` 은
+  GitHub Actions(봇)가 매일 만들고 커밋한다. 로컬에서 테스트로 다시 만들었으면 커밋 전에 `git checkout -- <파일>` 로 되돌리고,
+  새로 생긴 `similar/` 같은 폴더는 지운다. (섞어서 올리면 Pull 할 때 충돌한다)
+- **수정 전에는 Pull 먼저.** 봇이 매일 커밋하므로 사용자에게 GitHub Desktop 에서 Fetch/Pull → 수정 → Commit → Push 순서를 안내한다.
+- 사용자는 Git 을 **GitHub Desktop** 으로 쓴다. 이 PC 의 git 실행 파일:
+  `%LOCALAPPDATA%\GitHubDesktop\app-3.6.6\resources\app\git\cmd\git.exe` (명령줄에서는 push/pull 인증이 안 되므로 Push 는 사용자가 한다)
+- PowerShell 스크립트(`*.ps1`)는 **UTF-8 BOM** 으로 저장해야 Windows PowerShell 5.1 에서 한글이 깨지지 않는다.
+- PowerShell 변수는 대소문자를 구분하지 않는다 (`$W` 와 `$w` 는 같은 변수).
+- 공개 사이트에 바뀐 내용이 반영됐는지는 `curl.exe` 로 `https://webtoongg.com/...` 을 직접 받아 확인한다.
+
+## 구조
+
+| 파일 | 역할 |
+|---|---|
+| `index.html` | 메인 페이지 (검색용 문구 · 메타 태그 포함). `<!-- SEO-LINKS:START/END -->` 영역은 생성기가 채운다 |
+| `catalog.js` | 플랫폼 · 태그 별칭 · 장르 · 키워드 정의, 인기 점수(pop) 계산. 사이트와 생성기가 함께 씀 |
+| `app.js` | 추천 화면(장르 → 키워드 → 조건 → 결과), 지금 인기 웹툰 탭 |
+| `style.css` | 전체 디자인 (보라색 브랜드, 다크 모드, 휴대폰 대응) |
+| `generate-pages.js` | `recommend/`(테마별 102개) · `similar/`(비슷한 웹툰 200개) · `sitemap.xml` · `rss.xml` 생성 (`node generate-pages.js`) |
+| `fetch-naver.ps1` / `fetch-kakao.ps1` / `fetch-lezhin.ps1` | 작품 정보 + 표지 수집 → `data-*.js`, `thumbs/` |
+| `fetch-ranking.ps1` | 플랫폼 공식 인기 순위 + 요일별 순위 → `data-ranking.js` |
+| `stage-site.ps1` | 공개할 파일만 `_deploy/` 에 모음 (CNAME, .nojekyll 포함) |
+| `.github/workflows/update.yml` | 자동 갱신 + GitHub Pages 배포 |
+| `privacy.html` | 개인정보 처리방침 (`noindex`) |
+| `make-og-image.ps1` / `make-favicon.ps1` / `resize-thumbs.ps1` | 공유 이미지 · 아이콘 · 표지 축소(240px) |
+| `build-zip.ps1` | (예전 Netlify 수동 업로드용, 지금은 안 씀) |
+
+## 결정된 것
+
+### 서비스 · 운영
+- 이름 **웹툰지지 (webtoongg)**, 도메인 **webtoongg.com** (Netlify 에서 구매, 2026-09-29, 자동 갱신).
+- 호스팅: **GitHub Pages** 로 이전 결정 (2026-10-05). Netlify 무료 크레딧이 배포마다 소모돼 매일 배포가 막혔기 때문.
+  저장소 `webtoongg7777-boop/webtoongg` 는 **공개(Public)** 로 전환 (Actions 도 무제한 무료).
+- 자동 갱신: 매일 03:00 KST 순위, 매주 월 02:00 KST 작품 정보 전체. main 에 Push 해도 배포된다.
+- 디자인: 깔끔한 서비스형, 보라색(#5b4cf0 → #8b5cf6), gg 로고. 휴대폰에서도 상단 메뉴를 가로 스크롤로 보여준다.
+- 문의 메일: webtoongg7777@gmail.com (페이지에는 HTML 코드로 적어 스팸 수집을 줄임).
+- 방문 통계: 구글 애널리틱스 `G-EYH1WF44HG` 만 사용 (사이트에 보이는 방문자 카운터는 안 넣기로 함). 개인정보 처리방침 필수.
+- 광고: **지금은 넣지 않음.** 방문자가 쌓인 뒤 저작권 상담을 받고 결정.
+
+### 데이터
+- 플랫폼: 네이버웹툰(연재작 전체 + 일부 완결), 카카오웹툰(연재작), 레진코믹스(최근 120일 안에 회차가 올라온 일반 작품).
+- **카카오페이지 · 리디는 제외** (외부 요청 차단 403. 우회하지 않는다).
+- **레진 성인 작품은 제외** (로그인 · 성인 인증이 필요해 수집 불가).
+- 표지는 각 플랫폼 공식 썸네일을 240px 로 줄여 저장, 원본 작품 페이지로 링크. 하단에 저작권 · 삭제 요청 안내.
+- 카카오 연령은 회차의 ageLimit 로 판정. 정보가 없으면 UNKNOWN(15세 기준).
+
+### 추천 알고리즘
+- 1단계 장르는 **필수 조건** (고른 장르 중 하나 이상). 작품 장르는 플랫폼 장르 코드 + 장르 태그(예: 무협인데 "액션" 태그)로 판단.
+- 2단계 키워드는 **고른 장르에 어울리는 것만** 보여주고, 작품이 없는 키워드는 숨긴다.
+- 정렬: **추천순** = 일치한 조건 수 → 인기, **관심순** = 키워드가 하나 이상 맞는 작품만 인기순. 결과는 5개 + "더 보기" 10개씩.
+- 인기 비교: 네이버 관심 수와 레진 구독 수는 그대로 비교, 카카오는 **회차당 좋아요**의 플랫폼 내 순위를 네이버 같은 순위의 관심 수로 환산.
+- 성인 웹툰만 보기 스위치 (18세 이용가만).
+- 지금 인기 웹툰: 실시간 인기(공식 순위) · 오늘 연재(KST 요일) · 신작 · 숨은 명작(날짜별 고정 셔플, 장르 고르게). 성인 · 완결 제외.
+  "전체"는 네이버와 카카오를 번갈아 섞고, 레진은 레진 탭에서만.
+
+### 검색 노출(SEO)
+- 구글 Search Console · 네이버 서치어드바이저 등록 완료 (HTML 확인 파일 `google*.html`, `naver*.html` 은 **지우면 안 됨**).
+- 테마별 추천 페이지 102개 + "○○ 같은 웹툰" 페이지 200개 + 사이트맵 · RSS. 검색용 페이지에는 성인 작품을 넣지 않는다.
+- 개인정보 처리방침은 검색 결과에서 제외(`noindex`), 맨 위에 메인으로 가는 안내 버튼.
+- 공유 이미지 `og-image.png`, 파비콘 `favicon.ico/png`, `apple-touch-icon.png`.
+
+## 정해지지 않은 것
+- 광고 도입 시점 (방문자 규모 + 저작권 상담 후).
+- 추천 결과에서 완결작을 뒤로 보낼지.
+- 네이버 블로그 운영, 추천평(직접 쓴 글) 추가, 첫 화면 속도 개선(데이터 약 3MB).
+- 구글 애널리틱스에서 내 방문(내부 트래픽) 제외 설정.
+- Search Console 의 처리방침 URL 임시 삭제 여부 (일단 2주 지켜보기로 함), 사이트맵 목록의 잘못된 `/` 항목 정리.
+- 사이트맵 305개 반영 여부를 예약 작업으로 알려줄지.
+- GitHub Pages 이전 후 Netlify 프로젝트 · 토큰 Secrets 정리 방법.
+- 카카오페이지 · 레진 성인 작품을 수동으로 넣을지.
+
+## 진행 중 / 다음 할 일 (2026-10-05 기준)
+1. GitHub Pages 이전 3단계: `update.yml`, `stage-site.ps1` 커밋 · Push → Actions 의 build · deploy 성공 확인
+   → `https://webtoongg7777-boop.github.io/webtoongg/` 확인.
+2. 4단계: Pages 설정에 Custom domain `webtoongg.com` 입력 → Netlify 프로젝트에서 도메인 제거 →
+   Netlify DNS 에 A 레코드 4개(185.199.108.153 / .109.153 / .110.153 / .111.153)와 `www` CNAME(`webtoongg7777-boop.github.io`) 설정
+   → DNS 확인 후 **Enforce HTTPS** 켜기 → `webtoongg.com` 전체 점검.
+3. 반영 대기 중인 수정: 인기 웹툰 4가지 탭, 휴대폰 메뉴, 처리방침 안내 (Netlify 크레딧 소진으로 배포가 막혀 있었음).
+4. 1~2주 뒤: "웹툰지지" 검색 결과(메인 페이지 · 아이콘 · 사이트 이름), Search Console 사이트맵 305 · 색인 수, GA 트래픽 획득 점검.
+5. 홍보: 커뮤니티 · 단톡방 공유(UTM 꼬리표), 네이버 블로그.
