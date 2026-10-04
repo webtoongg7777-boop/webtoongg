@@ -197,7 +197,7 @@ section { scroll-margin-top: 72px; }
 .tabs button { border: 1px solid var(--line); background: var(--surface); color: var(--muted); border-radius: 999px; padding: 7px 14px; font-size: 13px; font-weight: 700; cursor: pointer; }
 .tabs button.on { background: var(--text); border-color: var(--text); color: var(--bg); }
 .poster-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 16px 14px; }
-.poster { text-decoration: none; display: block; }
+.poster { text-decoration: none; display: block; min-width: 0; }
 .poster .cover { position: relative; aspect-ratio: 1 / 1; border-radius: 14px; overflow: hidden; background: var(--surface-2); box-shadow: var(--shadow); }
 .poster .cover img { width: 100%; height: 100%; object-fit: cover; display: block; transition: transform .25s; }
 .poster:hover .cover img { transform: scale(1.04); }
@@ -223,7 +223,12 @@ footer .container { display: flex; justify-content: space-between; gap: 16px; fl
 footer p { margin: 0 0 4px; }
 
 @media (max-width: 640px) {
-  .topnav { display: none; }
+  /* 휴대폰: 메뉴를 로고 아래 한 줄로, 옆으로 밀어서 보기 */
+  .topbar .container { height: auto; flex-wrap: wrap; padding-top: 10px; }
+  .topnav { width: 100%; overflow-x: auto; gap: 6px; padding: 8px 0 10px; scrollbar-width: none; }
+  .topnav::-webkit-scrollbar { display: none; }
+  .topnav a { white-space: nowrap; flex-shrink: 0; font-size: 13px; padding: 6px 12px; background: var(--surface-2); border-radius: 999px; }
+  section { scroll-margin-top: 112px; }
   .hero { padding-top: 36px; padding-bottom: 16px; }
   .finder { padding: 18px; border-radius: 18px; }
   .options { grid-template-columns: 1fr 1fr; }
@@ -272,3 +277,14 @@ footer p { margin: 0 0 4px; }
 .seed p { margin: 2px 0; color: var(--text); }
 .seed-tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px !important; }
 .more-link { font-size: 13px; font-weight: 700; color: var(--brand); text-decoration: none; margin-left: 8px; }
+
+/* ───── 인기 웹툰 보기 방식 탭 ───── */
+#popular-tabs { display: flex; flex-direction: column; gap: 8px; align-items: flex-end; }
+.tabs.modes button { font-size: 14px; padding: 8px 14px; }
+.tabs.platforms-mini button { font-size: 12px; padding: 5px 11px; }
+@media (max-width: 640px) {
+  .section-head > div { min-width: 0; max-width: 100%; }
+  #popular-tabs { align-items: flex-start; width: 100%; }
+  .tabs.modes { flex-wrap: nowrap; overflow-x: auto; max-width: 100%; padding-bottom: 2px; }
+  .tabs.modes button { white-space: nowrap; flex-shrink: 0; }
+}

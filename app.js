@@ -252,54 +252,118 @@ function renderResults() {
 }
 
 // ───────── 지금 인기 웹툰 ─────────
-// 각 플랫폼의 공식 인기 순위(data-ranking.js, fetch-ranking.ps1 로 갱신)를 그대로 써요.
-// 성인 작품과 완결작은 빼요. "전체"는 네이버와 카카오 순위를 번갈아 섞어요.
-// (레진은 로그인 없이 볼 수 있는 작품 규모가 작아서 "전체"에서는 빼고 레진 탭에서만 보여줘요)
+// 매일 다르게 보이도록 네 가지 보기를 제공해요. 성인 작품과 완결작은 빼요.
+//  - 실시간 인기 : 각 플랫폼 공식 인기 순위 (data-ranking.js)
+//  - 오늘 연재   : 오늘 요일(한국 시간)에 연재되는 작품의 요일별 인기 순서
+//  - 신작        : 최근 시작한 연재작(작품 번호가 큰 순서) 중 인기 있는 작품
+//  - 숨은 명작   : 1위권 바로 아래 인기작을 날짜마다 다르게 골라, 장르가 골고루 섞이게
+// "전체"는 네이버와 카카오를 번갈아 섞어요. (레진은 규모가 작아서 레진 칸에서만 보여줘요)
 const POPULAR_SIZE = 12;
 const POPULAR_ALL_PLATFORMS = ["naver", "kakao"];
-let popularTab = "all";
+const POPULAR_MODES = [
+  { id: "rank",  label: "🔥 실시간 인기" },
+  { id: "today", label: "📅 오늘 연재" },
+  { id: "new",   label: "✨ 신작" },
+  { id: "gems",  label: "💎 숨은 명작" },
+];
+const DAY_LABEL = { mon: "월", tue: "화", wed: "수", thu: "목", fri: "금", sat: "토", sun: "일" };
+let popularTab = "all", popularMode = "rank";
 
 const workKey = w => w.platform === "lezhin" ? `lezhin:${w.url.split("/").pop()}` : `${w.platform}:${w.id}`;
 const WORK_BY_KEY = new Map(WEBTOONS.map(w => [workKey(w), w]));
+const showable = w => w && w.age !== "RATE_18" && !w.finished;
+
+// 한국 시간 기준 오늘 요일(mon~sun)과 날짜
+const kstNow = () => new Date(Date.now() + 9 * 3600 * 1000);
+const todayKey = () => ["sun", "mon", "tue", "wed", "thu", "fri", "sat"][kstNow().getUTCDay()];
+const todayStr = () => kstNow().toISOString().slice(0, 10);
+
+// 날짜가 같으면 같은 결과가 나오는 뒤섞기 (방문자마다 같은 "오늘의 숨은 명작")
+function seededShuffle(list, seedText) {
+  let h = 2166136261;
+  for (const ch of seedText) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  const rand = () => { h = Math.imul(h ^ (h >>> 15), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909); return ((h ^= h >>> 16) >>> 0) / 4294967296; };
+  const a = [...list];
+  for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(rand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; }
+  return a;
+}
 
 // 플랫폼 공식 순위 → 우리 데이터에 있는 연재중 · 비성인 작품 목록
 function rankedWorks(platformId) {
   const ids = (window.DATA_RANKING && window.DATA_RANKING[platformId]) || [];
-  return ids.map(id => WORK_BY_KEY.get(`${platformId}:${id}`))
-    .filter(w => w && w.age !== "RATE_18" && !w.finished);
+  return ids.map(id => WORK_BY_KEY.get(`${platformId}:${id}`)).filter(showable);
+}
+function todayWorks(platformId) {
+  const byDay = window.DATA_RANKING && window.DATA_RANKING.byDay && window.DATA_RANKING.byDay[platformId];
+  const ids = (byDay && byDay[todayKey()]) || [];
+  return ids.map(id => WORK_BY_KEY.get(`${platformId}:${id}`)).filter(showable);
+}
+function newWorks(platformId) {
+  const list = WEBTOONS.filter(w => w.platform === platformId && showable(w));
+  return list.sort((a, b) => Number(b.id) - Number(a.id)).slice(0, 80)   // 가장 최근에 시작한 80개 중
+    .sort((a, b) => b.pop - a.pop);                                       // 반응 좋은 순서
+}
+function gemWorks(platformIds) {
+  const top = new Set(platformIds.flatMap(id => rankedWorks(id).slice(0, 30)));
+  const pool = WEBTOONS.filter(w => platformIds.includes(w.platform) && showable(w) && !top.has(w) && w.pop >= 0.55 && w.pop <= 0.95);
+  // 장르별로 묶은 뒤 장르를 돌아가며 하나씩 뽑아요
+  const byGenre = new Map();
+  for (const w of seededShuffle(pool, todayStr())) {
+    const g = (GENRES.find(g => genreMatches(g, w)) || { id: "ETC" }).id;
+    if (!byGenre.has(g)) byGenre.set(g, []);
+    byGenre.get(g).push(w);
+  }
+  const lists = seededShuffle([...byGenre.values()], todayStr() + "g"), picked = [];
+  for (let r = 0; picked.length < POPULAR_SIZE && lists.some(l => r < l.length); r++) {
+    for (const l of lists) if (r < l.length && picked.length < POPULAR_SIZE) picked.push(l[r]);
+  }
+  return picked;
 }
 
-function popularList(tab) {
-  if (!window.DATA_RANKING) {
-    // 순위 파일이 없으면 인기 점수 순서로 대신 보여줘요
-    return WEBTOONS.filter(w => w.age !== "RATE_18" && !w.finished && (tab === "all" || w.platform === tab))
-      .sort((a, b) => b.pop - a.pop).slice(0, POPULAR_SIZE);
-  }
-  if (tab !== "all") return rankedWorks(tab).slice(0, POPULAR_SIZE);
-  const lists = POPULAR_ALL_PLATFORMS.filter(id => PLATFORM[id]).map(rankedWorks);
-  const mixed = [];
+function interleave(lists) {
+  const mixed = [], seen = new Set();
   for (let r = 0; mixed.length < POPULAR_SIZE && lists.some(l => r < l.length); r++) {
-    for (const l of lists) if (r < l.length && mixed.length < POPULAR_SIZE) mixed.push(l[r]);
+    for (const l of lists) if (r < l.length && mixed.length < POPULAR_SIZE && !seen.has(l[r])) { seen.add(l[r]); mixed.push(l[r]); }
   }
   return mixed;
+}
+
+function popularList(tab, mode) {
+  const platformIds = tab === "all" ? POPULAR_ALL_PLATFORMS.filter(id => PLATFORM[id]) : [tab];
+  if (mode === "gems") return gemWorks(platformIds);
+  if (!window.DATA_RANKING && mode !== "new") {
+    // 순위 파일이 없으면 인기 점수 순서로 대신 보여줘요
+    return WEBTOONS.filter(w => showable(w) && platformIds.includes(w.platform)).sort((a, b) => b.pop - a.pop).slice(0, POPULAR_SIZE);
+  }
+  const fn = mode === "today" ? todayWorks : mode === "new" ? newWorks : rankedWorks;
+  return interleave(platformIds.map(fn));
+}
+
+function popularCaption(mode) {
+  const r = window.DATA_RANKING;
+  const time = r ? (d => `${d.getMonth() + 1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} 기준`)(new Date(r.updatedAt)) : "";
+  if (mode === "today") return `오늘(${DAY_LABEL[todayKey()]}요일) 연재되는 웹툰을 요일별 인기 순서로 모았어요.`;
+  if (mode === "new") return "최근 연재를 시작한 작품 중 반응이 좋은 작품이에요.";
+  if (mode === "gems") return "1위권 바로 아래에서 꾸준히 사랑받는 작품을 장르별로 골랐어요. 매일 다른 작품이 나와요.";
+  return `${time} · 각 플랫폼 공식 인기 순위`;
 }
 
 function renderPopular() {
   const box = document.getElementById("popular");
   if (!box) return;
-  const top = popularList(popularTab);
-  document.querySelectorAll("#popular-tabs button").forEach(b => b.classList.toggle("on", b.dataset.tab === popularTab));
-  box.innerHTML = top.map((w, i) => `
+  const top = popularList(popularTab, popularMode);
+  document.querySelectorAll("#popular-tabs [data-tab]").forEach(b => b.classList.toggle("on", b.dataset.tab === popularTab));
+  document.querySelectorAll("#popular-tabs [data-mode]").forEach(b => b.classList.toggle("on", b.dataset.mode === popularMode));
+  const numbered = popularMode !== "gems";
+  box.innerHTML = top.length ? top.map((w, i) => `
     <a class="poster" href="${w.url}" target="_blank" rel="noopener" title="${escapeHtml(w.title)}">
-      <div class="cover">${coverImg(w)}<span class="num">${i + 1}</span></div>
+      <div class="cover">${coverImg(w)}${numbered ? `<span class="num">${i + 1}</span>` : ""}</div>
       <b>${escapeHtml(w.title)}</b>
       <small style="--pf:${PLATFORM[w.platform].color}">${PLATFORM[w.platform].label}</small>
-    </a>`).join("");
+    </a>`).join("")
+    : `<p class="end" style="grid-column:1/-1">이 조건에 맞는 작품이 아직 없어요. 다른 탭을 눌러 보세요.</p>`;
   const updated = document.getElementById("popular-updated");
-  if (updated && window.DATA_RANKING) {
-    const d = new Date(window.DATA_RANKING.updatedAt);
-    updated.textContent = `${d.getMonth() + 1}월 ${d.getDate()}일 ${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")} 기준 · 각 플랫폼 공식 인기 순위`;
-  }
+  if (updated) updated.textContent = popularCaption(popularMode);
 }
 
 function initPage() {
@@ -309,12 +373,15 @@ function initPage() {
   set("stat-platforms", PLATFORMS.length);
   set("stat-keywords", KEYWORDS.length);
 
-  // 인기 웹툰 탭
+  // 인기 웹툰 탭: 보기 방식(실시간 인기 · 오늘 연재 · 신작 · 숨은 명작) + 플랫폼
   const tabs = document.getElementById("popular-tabs");
   if (tabs) {
-    tabs.innerHTML = `<button data-tab="all">전체</button>` +
-      PLATFORMS.map(p => `<button data-tab="${p.id}">${p.label}</button>`).join("");
-    tabs.querySelectorAll("button").forEach(b => b.onclick = () => { popularTab = b.dataset.tab; renderPopular(); });
+    tabs.innerHTML =
+      `<div class="tabs modes">${POPULAR_MODES.map(m => `<button data-mode="${m.id}">${m.label}</button>`).join("")}</div>` +
+      `<div class="tabs platforms-mini"><button data-tab="all">전체</button>` +
+      PLATFORMS.map(p => `<button data-tab="${p.id}">${p.label}</button>`).join("") + `</div>`;
+    tabs.querySelectorAll("[data-mode]").forEach(b => b.onclick = () => { popularMode = b.dataset.mode; renderPopular(); });
+    tabs.querySelectorAll("[data-tab]").forEach(b => b.onclick = () => { popularTab = b.dataset.tab; renderPopular(); });
   }
   renderPopular();
   render();
