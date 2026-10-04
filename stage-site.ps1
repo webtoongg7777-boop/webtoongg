@@ -24,6 +24,10 @@ Copy-Item (Join-Path $root "thumbs") (Join-Path $out "thumbs") -Recurse
 Copy-Item (Join-Path $root "recommend") (Join-Path $out "recommend") -Recurse
 Copy-Item (Join-Path $root "similar") (Join-Path $out "similar") -Recurse
 
+# GitHub Pages 용: 사이트 주소(CNAME)와, 파일을 그대로 쓰라는 표시(.nojekyll)
+[IO.File]::WriteAllText((Join-Path $out "CNAME"), "webtoongg.com", (New-Object Text.UTF8Encoding $false))
+[IO.File]::WriteAllText((Join-Path $out ".nojekyll"), "", (New-Object Text.UTF8Encoding $false))
+
 # 방문자 브라우저가 예전 파일을 쓰지 않게, index.html 의 ?v= 버전을 오늘 날짜로 바꿔요
 $indexPath = Join-Path $out "index.html"
 $version = Get-Date -Format "yyyyMMddHH"
