@@ -5,7 +5,7 @@ const PAGE_SIZE = 5, MORE_SIZE = 10;
 
 const state = {
   step: 0, genres: new Set(), keywords: new Set(), age: null, status: "any", adultOnly: false,
-  sort: "match", shown: PAGE_SIZE, platforms: new Set(PLATFORMS.map(p => p.id)),
+  sort: "match", shown: PAGE_SIZE, reroll: 0, platforms: new Set(PLATFORMS.map(p => p.id)),
 };
 
 // 선택한 플랫폼의 작품만, 성인 웹툰만 보기를 켜면 18세 이용가 작품만 대상으로 해요
@@ -140,6 +140,42 @@ function renderConditions() {
 }
 
 // ───────── 추천 점수 계산 ─────────
+// 예전에는 "일치한 조건 수 → 인기" 순서라서 같은 조건이면 매일 똑같은 대작 몇 편만 위에 나왔어요.
+// 이제는 이렇게 골라요.
+//  1) 고른 조건이 많이 맞을수록 위 (화면의 "고른 조건 모두 일치" 같은 단계는 그대로)
+//  2) 같은 단계 안에서는 점수 = 인기 60% + 적합도 15% + 오늘의 변화 25%
+//     - 적합도: 고른 키워드의 태그를 여러 개 가진 작품일수록 (예: "회귀"와 "환생" 둘 다)
+//     - 오늘의 변화: 날짜로 정해지는 값이라 (인기가 낮은 작품은 변화 폭도 작게) 하루 동안은 같은 순서, 날이 바뀌면 순서가 바뀌어요.
+//       "다른 작품 보기"를 누르면 또 다른 순서가 나와요.
+//  3) 한 플랫폼 작품만 줄줄이 나오지 않게, 같은 단계 안에서 플랫폼을 섞어요.
+// "관심순"은 지금처럼 순수하게 인기 순서예요.
+const MIX = { pop: 0.6, fit: 0.15, luck: 0.25, samePlatform: 0.06 };
+
+// 글자로 0~1 사이 값을 만들어요 (같은 글자면 항상 같은 값)
+function hashRand(text) {
+  let h = 2166136261;
+  for (const ch of text) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+  h = Math.imul(h ^ (h >>> 15), 2246822507); h = Math.imul(h ^ (h >>> 13), 3266489909);
+  return ((h ^= h >>> 16) >>> 0) / 4294967296;
+}
+
+// 같은 단계 안에서 점수가 높은 순서로 고르되, 바로 앞에 같은 플랫폼이 많이 나왔으면 조금 뒤로 미뤄요
+function mixPlatforms(list) {
+  const left = [...list], out = [], used = {};
+  while (left.length) {
+    let best = 0, bestScore = -Infinity;
+    for (let i = 0; i < left.length; i++) {
+      const v = left[i].score - MIX.samePlatform * (used[left[i].w.platform] || 0);
+      if (v > bestScore) { bestScore = v; best = i; }
+    }
+    const [s] = left.splice(best, 1);
+    out.push(s);
+    used[s.w.platform] = (used[s.w.platform] || 0) + 1;
+    if (out.length % 5 === 0) for (const k in used) used[k] = 0;   // 다섯 개마다 새로 세요
+  }
+  return out;
+}
+
 function recommend() {
   const pickedGenres = GENRES.filter(g => state.genres.has(g.id));
   const pickedKeywords = KEYWORDS.filter(k => state.keywords.has(k.id));
@@ -151,27 +187,34 @@ function recommend() {
     pickedGenres.some(g => genreMatches(g, w)));
 
   const total = pickedGenres.length + pickedKeywords.length;
+  const seed = `${todayStr()}|${state.reroll}|`;
   let list = candidates.map(w => {
     const reasons = [], matchedGenres = [];
-    let keywordHits = 0;
+    let keywordHits = 0, tagHits = 0;
     for (const g of pickedGenres) {
       if (genreMatches(g, w)) { reasons.push(g.label); matchedGenres.push(g.id); }
     }
     for (const k of pickedKeywords) {
-      if (k.tags.some(t => w.tags.includes(t))) { keywordHits++; reasons.push(k.label); }
+      const n = k.tags.filter(t => w.tags.includes(t)).length;
+      if (n) { keywordHits++; tagHits += n; reasons.push(k.label); }
     }
-    return { w, reasons, keywordHits, matchedGenres, match: reasons.length, total };
+    const fit = pickedKeywords.length ? Math.min(1, tagHits / (pickedKeywords.length * 2)) : 0;
+    const luck = hashRand(seed + w.platform + w.id);
+    // 인기가 너무 낮은 작품이 운으로만 올라오지 않게, 오늘의 변화 폭은 인기에 비례해서 줘요
+    const score = MIX.pop * w.pop + MIX.fit * fit + MIX.luck * luck * (0.4 + 0.6 * w.pop);
+    return { w, reasons, keywordHits, matchedGenres, match: reasons.length, total, score };
   });
 
   if (state.sort === "popular") {
     // 관심순: 키워드를 골랐다면 키워드가 하나 이상 맞는 작품만, 인기 순서로
     if (pickedKeywords.length) list = list.filter(s => s.keywordHits > 0);
-    list.sort((a, b) => b.w.pop - a.w.pop || b.w.favorites - a.w.favorites);
-  } else {
-    // 추천순: 고른 조건이 많이 일치할수록 위로, 일치 개수가 같으면 인기 순서로
-    list.sort((a, b) => b.match - a.match || b.w.pop - a.w.pop || b.w.favorites - a.w.favorites);
+    return list.sort((a, b) => b.w.pop - a.w.pop || b.w.favorites - a.w.favorites);
   }
-  return list;
+  // 추천순: 일치 단계별로 나눠서, 단계 안에서는 점수 + 플랫폼 섞기
+  const tiers = new Map();
+  for (const s of list) { if (!tiers.has(s.match)) tiers.set(s.match, []); tiers.get(s.match).push(s); }
+  return [...tiers.keys()].sort((a, b) => b - a)
+    .flatMap(m => mixPlatforms(tiers.get(m).sort((a, b) => b.score - a.score)));
 }
 
 function matchLabel(s) {
@@ -199,7 +242,7 @@ function renderResults() {
   app.innerHTML = `
     <div class="panel">
       <h2>추천 결과${state.adultOnly ? `<span class="badge-adult">성인</span>` : ""}</h2>
-      <p class="hint">고른 장르와 키워드가 많이 맞는 작품부터 보여 드려요.</p>
+      <p class="hint">${state.sort === "match" ? "고른 장르와 키워드가 많이 맞는 작품부터, 날마다 조금씩 다른 작품을 섞어서 보여 드려요." : "조건에 맞는 작품을 인기 순서대로 보여 드려요."}</p>
       <div class="picked">${picked.map(p => `<span class="chip">${p}</span>`).join("")}</div>
       <div class="sortbar">
         <span class="count">조건에 맞는 작품 <b>${all.length.toLocaleString()}</b>개</span>
@@ -228,6 +271,8 @@ function renderResults() {
             <span class="go">${p.label}에서 보기 →</span>
           </div>
         </a>`; }).join("")}</div>
+        ${state.sort === "match" && all.length > PAGE_SIZE
+          ? `<button class="btn more" id="reroll" title="같은 조건으로 다른 작품을 추천받아요">↻ 같은 조건, 다른 작품 보기</button>` : ""}
         ${all.length > top.length
           ? `<button class="btn more" id="more">더 보기 (${top.length} / ${all.length.toLocaleString()})</button>`
           : `<p class="end">조건에 맞는 작품을 모두 보여드렸어요.</p>`}`
@@ -246,6 +291,11 @@ function renderResults() {
     window.scrollTo({ top: y });   // 누른 위치 그대로 이어서 보기
   };
   app.querySelector("#prev").onclick = () => go(2);
+  const reroll = app.querySelector("#reroll");
+  if (reroll) reroll.onclick = () => {
+    state.reroll++; state.shown = PAGE_SIZE; render();
+    document.getElementById("finder").scrollIntoView({ behavior: "smooth", block: "start" });
+  };
   app.querySelector("#restart").onclick = () => {
     state.genres.clear(); state.keywords.clear(); state.age = null; state.status = "any"; go(0);
   };
@@ -261,13 +311,13 @@ function renderResults() {
 const POPULAR_SIZE = 12;
 const POPULAR_ALL_PLATFORMS = ["naver", "kakao"];
 const POPULAR_MODES = [
-  { id: "rank",  label: "실시간 인기" },
   { id: "today", label: "오늘 연재" },
+  { id: "rank",  label: "실시간 인기" },
   { id: "new",   label: "신작" },
   { id: "gems",  label: "숨은 명작" },
 ];
 const DAY_LABEL = { mon: "월", tue: "화", wed: "수", thu: "목", fri: "금", sat: "토", sun: "일" };
-let popularTab = "all", popularMode = "rank";
+let popularTab = "all", popularMode = "today";   // 첫 화면은 요일마다 바뀌는 "오늘 연재"부터
 
 const workKey = w => w.platform === "lezhin" ? `lezhin:${w.url.split("/").pop()}` : `${w.platform}:${w.id}`;
 const WORK_BY_KEY = new Map(WEBTOONS.map(w => [workKey(w), w]));
@@ -373,24 +423,24 @@ function renderPopular() {
   if (updated) updated.textContent = popularCaption(popularMode);
 }
 
-// 첫 화면 "요즘 다들 보는 웹툰": 지금 실시간 15위 안에 있으면서, 쌓인 인기도 전체 상위 5%(pop 0.95 이상)인 대중작
+// 첫 화면 "요즘 다들 보는 웹툰": 지금 실시간 순위권(30위 안)에 있으면서, 쌓인 인기도 전체 상위 10%(pop 0.9 이상)인 대중작
+// 예전에는 항상 인기 점수 1~2위만 골라서 매일 같은 작품이 나왔어요. 이제 조건에 맞는 작품 중에서 날짜마다 다르게 골라요.
 // 자리는 네이버 2 · 카카오 2 · 레진 1, 조건에 맞는 작품이 모자란 플랫폼 자리는 다른 플랫폼 대중작으로 채워요.
 // 가벼운 일상 · 개그 컷툰과 성인 · 완결작은 빼요. 보여주는 순위 숫자는 공식 실시간 순위 그대로예요.
 const HERO_SLOTS = [["naver", 2], ["kakao", 2], ["lezhin", 1]];
-const HERO_TOP = 15, HERO_MIN_POP = 0.95;
+const HERO_TOP = 30, HERO_MIN_POP = 0.9;
 function heroPicks() {
   const ranking = window.DATA_RANKING || {};
   const isLight = w => w.genres.every(g => g === "COMIC" || g === "DAILY");
   const pools = HERO_SLOTS.filter(([id]) => PLATFORM[id]).map(([id, n]) => ({
     n,
-    list: (ranking[id] || []).slice(0, HERO_TOP)
+    list: seededShuffle((ranking[id] || []).slice(0, HERO_TOP)
       .map((workId, i) => ({ w: WORK_BY_KEY.get(`${id}:${workId}`), platformRank: i + 1 }))
-      .filter(c => showable(c.w) && !isLight(c.w) && c.w.pop >= HERO_MIN_POP)
-      .sort((a, b) => b.w.pop - a.w.pop),
+      .filter(c => showable(c.w) && !isLight(c.w) && c.w.pop >= HERO_MIN_POP), todayStr() + id),
   }));
   const picked = pools.flatMap(p => p.list.slice(0, p.n));
   const size = HERO_SLOTS.reduce((s, [, n]) => s + n, 0);
-  const rest = pools.flatMap(p => p.list.slice(p.n)).sort((a, b) => b.w.pop - a.w.pop);
+  const rest = seededShuffle(pools.flatMap(p => p.list.slice(p.n)), todayStr() + "rest");
   return [...picked, ...rest.slice(0, size - picked.length)].sort((a, b) => a.platformRank - b.platformRank);   // 실시간 순위가 높은 순서로
 }
 // 줄거리 첫 문장만 (궁금증이 생길 만큼만 짧게)
